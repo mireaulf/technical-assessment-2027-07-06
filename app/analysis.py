@@ -8,6 +8,7 @@ from app.stock_service import TickerNotIngestedError, attach_news_to_movements, 
 
 DEFAULT_LOOKBACK_DAYS = 180
 NEWS_WINDOW_DAYS = 2
+NO_NEWS_COVERAGE_MESSAGE = "No news coverage available for this date."
 
 
 def _row_to_point(row) -> PricePoint:
@@ -69,7 +70,14 @@ def get_ticker_analysis(
 
         explanations = get_explanations(session, ticker, [m.date for m in movements])
         for m in movements:
-            m.explanation = explanations.get(m.date)
+            if m.date in explanations:
+                m.explanation = explanations[m.date]
+            elif not m.articles:
+                # Distinguishes "we looked and there was nothing to explain
+                # from" from "an explanation should exist but doesn't yet"
+                # (e.g. ingestion hasn't run since this movement had
+                # articles attached, or a prior Claude call failed).
+                m.explanation = NO_NEWS_COVERAGE_MESSAGE
 
         return TickerAnalysis(
             ticker=ticker,

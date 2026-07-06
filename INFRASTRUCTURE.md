@@ -121,7 +121,7 @@ Because Yahoo's news feed is only ever the ~10 most recent stories, persisting e
 1. Looks up `ticker_price_coverage`. If the ticker has never been ingested → raise `TickerNotIngestedError` (`GET`/`POST /api/chat` both surface this as `404`, pointing the caller at `POST /api/ingest/{ticker}`).
 2. Reads `prices`/`articles` for the requested range straight from Postgres — no coverage math, no fallback fetch.
 3. Computes movements and attaches nearby articles.
-4. Reads any pre-generated `movement_explanations` rows for those same dates and attaches them - purely a lookup, no Claude call happens here even if a movement has no stored explanation yet.
+4. Reads any pre-generated `movement_explanations` rows for those same dates and attaches them - purely a lookup, no Claude call happens here even if a movement has no stored explanation yet. A movement with zero nearby articles gets an explicit `"No news coverage available for this date."` string instead of `null` (`app/analysis.py:NO_NEWS_COVERAGE_MESSAGE`); `null` is reserved for the rarer case where articles exist but no explanation was ever generated for them (a prior Claude call failed, or the key wasn't set at ingest time).
 5. Returns both the requested range and the ticker's actual `data_coverage_start`/`data_coverage_end`, so a caller can tell if the worker hasn't caught up to "today" yet (the requested range can legitimately extend past what's been ingested if the scheduler hasn't run recently).
 
 ## Configuration

@@ -31,8 +31,12 @@ class Movement(BaseModel):
     direction: str  # "up" | "down"
     articles: list[Article] = []
     # Pre-generated at ingestion time (see app/explain.py) when articles were
-    # available - None if never generated (no nearby news yet, below the
-    # ingestion-time explanation threshold, or ANTHROPIC_API_KEY unset).
+    # available. Set to an explicit "no news coverage" message (rather than
+    # left null) when there are no nearby articles at all - see
+    # app/analysis.py:NO_NEWS_COVERAGE_MESSAGE. Left null only in the rarer
+    # case where articles exist but generation hasn't happened/succeeded yet
+    # (e.g. a prior Claude call failed, or ANTHROPIC_API_KEY was unset when
+    # this range was last ingested).
     explanation: Optional[str] = None
 
 
