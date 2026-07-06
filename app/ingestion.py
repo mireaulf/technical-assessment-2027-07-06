@@ -49,11 +49,11 @@ EXPLANATION_NEWS_WINDOW_DAYS = 2
 
 # Medium tier (industry/competitor news) only activates once a NewsAPI key
 # is configured - without one, behavior is unchanged from the Easy tier.
-MEDIUM_TIER_ENABLED = bool(settings.newsapi_api_key)
+_NEWSAPI_CONFIGURED = bool(settings.newsapi_api_key)
 
 
 def _build_news_provider() -> NewsProvider:
-    if not MEDIUM_TIER_ENABLED:
+    if not _NEWSAPI_CONFIGURED:
         return YFinanceNewsProvider()
     return CompositeNewsProvider([YFinanceNewsProvider(), NewsAPIProvider(settings.newsapi_api_key)])
 
@@ -117,7 +117,7 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
         articles = []
         try:
             industry, competitors = (None, [])
-            if MEDIUM_TIER_ENABLED:
+            if _NEWSAPI_CONFIGURED:
                 industry, competitors = _get_or_classify(session, ticker)
             articles = _news_provider.get_news(ticker, industry=industry, competitors=competitors)
             upsert_articles(session, ticker, articles)
