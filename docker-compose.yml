@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: stockmoves
+      POSTGRES_PASSWORD: stockmoves
+      POSTGRES_DB: stockmoves
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockmoves"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # The API. `app/` is bind-mounted over the image's copy so `--reload`
+  # picks up code changes immediately - no rebuild, no manual `uvicorn`.
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://stockmoves:stockmoves@db:5432/stockmoves
+      # .env only holds 1Password references (op://...) - these pull the
+      # resolved secret values from the shell, which `op run` populates
+      # (see scripts/infra.sh). Takes precedence over env_file above.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Runs app/scheduler.py on a loop, refreshing whatever tickers have
+  # already been ingested. Intentionally its own container, separate from
+  # the API - it's the only process that calls yfinance/the news provider.
+  ingestion:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://stockmoves:stockmoves@db:5432/stockmoves
+      # See the api service above - resolved via `op run`, not read from the
+      # literal op:// references in env_file.
+      NEWSAPI_API_KEY: ${NEWSAPI_API_KEY:-}
+      GNEWS_API_KEY: ${GNEWS_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
