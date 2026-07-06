@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 
-from app.analysis import get_ticker_analysis, list_tracked_tickers
+from app.analysis import get_ticker_analysis, list_industries, list_tracked_tickers
 from app.chat import answer_chat
 from app.db import init_db
 from app.ingestion import ingest_ticker
@@ -39,6 +39,18 @@ def get_tracked_tickers(
 ):
     """Every ticker that's been ingested at least once, with its data range."""
     return list_tracked_tickers(industry)
+
+
+@app.get("/api/industries", response_model=list[str])
+def get_industries():
+    """Every distinct industry classified so far (Medium news tier).
+
+    Not a fixed list - each entry was derived by Claude for some ticker
+    (see app/news/classifier.py), so this only grows as tickers are
+    ingested with NEWSAPI_API_KEY set. Use a value from here (or a
+    substring of one) as `GET /api/tickers?industry=...`.
+    """
+    return list_industries()
 
 
 @app.get("/api/tickers/{ticker}", response_model=TickerAnalysis)

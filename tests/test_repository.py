@@ -11,6 +11,7 @@ from app.repository import (
     get_coverage,
     get_explanations,
     get_prices,
+    list_classified_industries,
     list_coverage,
     list_tracked_tickers,
     upsert_articles,
@@ -195,3 +196,18 @@ def test_list_coverage_industry_filter_excludes_unclassified_tickers(session):
     rows = list_coverage(session, industry="semi")
 
     assert TEST_TICKER not in [coverage.ticker for coverage, _ in rows]
+
+
+def test_list_classified_industries_includes_newly_classified_industry(session):
+    upsert_classification(session, TEST_TICKER, "Distinct Test Widgetmaking", [])
+
+    assert "Distinct Test Widgetmaking" in list_classified_industries(session)
+
+
+def test_list_classified_industries_dedupes_across_tickers(session):
+    upsert_classification(session, TEST_TICKER, "Shared Test Widgetmaking", [])
+    upsert_classification(session, TEST_TICKER_2, "Shared Test Widgetmaking", [])
+
+    industries = list_classified_industries(session)
+
+    assert industries.count("Shared Test Widgetmaking") == 1

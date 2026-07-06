@@ -13,6 +13,7 @@ Infrastructure details (Docker Compose, database schema, data flow, config) live
    - `POST /api/ingest/{ticker}` — fetch a ticker's data now, persist it, and generate explanations for any newly-qualifying movements. This is also how a ticker starts being tracked.
    - A separate `ingestion` worker (`docker compose`, `app/scheduler.py`) refreshes every already-tracked ticker on an interval, so ingestion doesn't depend on anyone hitting the API.
    - `GET /api/tickers` — list every ticker that's been ingested, with its data range and (if classified) industry; filterable by `industry` (case-insensitive substring match).
+   - `GET /api/industries` — every distinct industry classified so far, to discover valid values for the filter above.
    - `GET /api/tickers/{ticker}` — full stock + news data for a ticker, filterable by date range and move threshold, including any pre-generated explanation per movement. **Reads only from Postgres**, never calls `yfinance` or Claude.
    - `POST /api/chat` — ask questions about a ticker's movements; grounds Claude's answer in the same DB-only data (including any pre-generated explanations). Also never calls `yfinance` directly.
 
@@ -37,6 +38,7 @@ curl -X POST "http://localhost:8000/api/ingest/AAPL"   # fetch + persist AAPL no
 
 curl "http://localhost:8000/api/tickers"   # list every tracked ticker + its data range
 curl "http://localhost:8000/api/tickers?industry=semiconductor"   # filter by classified industry (substring, case-insensitive)
+curl "http://localhost:8000/api/industries"   # every distinct industry classified so far
 
 curl "http://localhost:8000/api/tickers/AAPL?min_move_pct=2&start_date=2026-01-01&end_date=2026-07-01"
 
@@ -69,6 +71,7 @@ uv run pytest tests/ -v
   - `app/news/composite_provider.py`'s `CompositeNewsProvider` fans a single `get_news` call out to `YFinanceNewsProvider` + `NewsAPIProvider` and merges the results (deduped by URL); one provider failing doesn't drop the other's articles. `app/ingestion.py` only builds the composite (and only classifies at all) when `NEWSAPI_API_KEY` is set — without it, behavior is byte-for-byte the Easy-tier-only behavior from before.
   - `app/chat.py`'s context builder tags non-company articles (e.g. `(industry)`, `(competitor)`) so Claude doesn't conflate broader context with company-specific news when explaining a move.
   - `GET /api/tickers?industry=...` filters the tracked-ticker list by this classification. It's a case-insensitive substring match, not exact equality — each ticker's industry label is generated independently by Claude rather than drawn from a fixed taxonomy, so two related tickers can be worded slightly differently (e.g. "Semiconductors" vs. "Semiconductor Manufacturing"); substring matching is more forgiving of that than requiring an exact string. Tickers without a classification yet are excluded when the filter is used.
+  - `GET /api/industries` lists every distinct industry classified so far, so a caller can discover valid values for that filter instead of guessing. It's not a fixed/curated list - it's just whatever Claude has derived from tickers ingested with `NEWSAPI_API_KEY` set, so it grows over time and reflects the same non-canonical wording described above.
   - Not implemented: the **[Hard]** tier (macro/political news) and a `GNewsProvider`/`ExaProvider` — one broad-news provider is enough to prove out the pattern; both would drop in behind the same `NewsProvider` interface.
 - **Known limitation of the Easy-tier provider**: Yahoo's news feed only exposes a rolling window of the ~10 most recent stories per ticker — it's not a queryable historical archive. Articles are attached to a movement only if their publish date falls within a couple of days of it, so **recent movements get real headlines, older ones will legitimately show up with no articles** (this doesn't apply to Medium-tier industry/competitor articles, which aren't tied to a specific movement date the same way). This is a real trade-off of running with zero paid API keys, not a bug; a historical news API would remove it.
 - **Chat endpoint**: stateless per request — the client resends conversation history if it wants multi-turn context. The server pulls the same movement/news dataset the `/api/tickers` endpoint would return, formats it as plain text, and passes it to Claude as a system prompt so answers are grounded in the actual data rather than the model's general knowledge. It explicitly instructs the model to say when the data doesn't cover something rather than guess.

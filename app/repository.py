@@ -188,6 +188,22 @@ def get_classification(session: Session, ticker: str) -> Optional[TickerClassifi
     return session.get(TickerClassificationRow, ticker)
 
 
+def list_classified_industries(session: Session) -> list[str]:
+    """Every distinct industry classified so far, for `GET /api/industries`.
+
+    Not a fixed taxonomy - each entry was independently derived by Claude
+    for some ticker (see app/news/classifier.py), so this list only grows
+    as more tickers get ingested with NEWSAPI_API_KEY set.
+    """
+    stmt = (
+        select(TickerClassificationRow.industry)
+        .where(TickerClassificationRow.industry.isnot(None))
+        .distinct()
+        .order_by(TickerClassificationRow.industry)
+    )
+    return list(session.scalars(stmt))
+
+
 def upsert_classification(session: Session, ticker: str, industry: str, competitors: list[str]) -> None:
     now = datetime.now(timezone.utc)
     row = session.get(TickerClassificationRow, ticker)
