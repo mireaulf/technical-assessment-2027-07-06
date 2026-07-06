@@ -24,7 +24,7 @@ class NewsProvider(ABC):
 
         `industry`/`competitors` are optional hints (see
         app/news/classifier.py) for providers that support broader
-        (Medium-tier) queries - providers that only do company-specific
+        (industry moves) queries - providers that only do company-specific
         lookups are free to ignore them.
         """
         raise NotImplementedError

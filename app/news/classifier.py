@@ -15,11 +15,11 @@ MAX_COMPETITORS = 3
 def classify_ticker(ticker: str, api_key: str, model: str) -> Optional[TickerClassification]:
     """Best-effort LLM lookup of a ticker's industry + top competitors.
 
-    Drives the Medium news tier (competitor/industry) without relying on a
+    Drives industry moves (competitor/industry news) without relying on a
     paid peers/fundamentals API - yfinance doesn't reliably expose one.
     Caller is expected to cache the result (see app/ingestion.py); this
     hits the Anthropic API every time it's called. Never raises - a failed
-    classification just means Medium-tier news is skipped for this ticker.
+    classification just means industry moves news is skipped for this ticker.
     """
     if not api_key:
         return None

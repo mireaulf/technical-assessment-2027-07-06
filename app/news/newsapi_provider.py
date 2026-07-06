@@ -15,7 +15,7 @@ PAGE_SIZE = 10
 
 
 class NewsAPIProvider(NewsProvider):
-    """Broader (Medium-tier) news via NewsAPI, driven by an `industry` and
+    """Broader (industry moves) news via NewsAPI, driven by an `industry` and
     `competitors` classification (see app/news/classifier.py) rather than
     the ticker itself - this provider is meant to run alongside
     `YFinanceNewsProvider`, not replace it.

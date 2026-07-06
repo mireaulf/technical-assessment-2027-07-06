@@ -32,7 +32,7 @@ def get_tracked_tickers(
         None,
         description=(
             "Case-insensitive substring filter on the ticker's Claude-classified industry "
-            "(Medium news tier, requires NEWSAPI_API_KEY - see README). Tickers without a "
+            "(industry moves, requires NEWSAPI_API_KEY - see README). Tickers without a "
             "classification yet are excluded when this is set."
         ),
     ),
@@ -43,7 +43,7 @@ def get_tracked_tickers(
 
 @app.get("/api/industries", response_model=list[str])
 def get_industries():
-    """Every distinct industry classified so far (Medium news tier).
+    """Every distinct industry classified so far (industry moves).
 
     Not a fixed list - each entry was derived by Claude for some ticker
     (see app/news/classifier.py), so this only grows as tickers are

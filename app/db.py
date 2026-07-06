@@ -80,7 +80,7 @@ class MovementExplanationRow(Base):
 
 class TickerClassificationRow(Base):
     """Cached LLM classification of a ticker's industry + top competitors,
-    used to drive Medium-tier news queries (see app/news/classifier.py).
+    used to drive industry moves news queries (see app/news/classifier.py).
     Classified once per ticker, not re-derived on every ingestion cycle.
     """
 

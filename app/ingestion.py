@@ -47,7 +47,7 @@ PCT_CHANGE_BUFFER_DAYS = 7
 EXPLANATION_MIN_MOVE_PCT = 2.0
 EXPLANATION_NEWS_WINDOW_DAYS = 2
 
-# Medium tier (industry/competitor news) only activates once a NewsAPI key
+# Industry moves (industry/competitor news) only activates once a NewsAPI key
 # is configured - without one, behavior is unchanged from the Easy tier.
 _NEWSAPI_CONFIGURED = bool(settings.newsapi_api_key)
 
@@ -64,7 +64,7 @@ _news_provider: NewsProvider = _build_news_provider()
 def _get_or_classify(session: Session, ticker: str) -> tuple[Optional[str], list[str]]:
     """Industry + competitors for a ticker, classifying (and caching) via
     Claude on first use. Returns (None, []) if classification isn't
-    available or fails - callers should treat that as "no Medium-tier
+    available or fails - callers should treat that as "no industry moves
     context for this ticker" rather than an error.
     """
     row = get_classification(session, ticker)

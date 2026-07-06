@@ -21,12 +21,12 @@ class Article(BaseModel):
     source: Optional[str] = None
     published_at: Optional[datetime] = None
     summary: Optional[str] = None
-    # "company" (Easy tier), "industry" or "competitor" (Medium tier).
+    # "company" (Easy tier), "industry" or "competitor" (industry moves).
     category: str = "company"
 
 
 class TickerClassification(BaseModel):
-    """Best-effort LLM classification of a ticker, used to drive Medium-tier
+    """Best-effort LLM classification of a ticker, used to drive industry moves
     (industry/competitor) news queries. See app/news/classifier.py."""
 
     industry: str
