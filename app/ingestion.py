@@ -21,6 +21,7 @@ from app.repository import (
     get_explanations,
     list_classified_industries,
     list_tracked_tickers,
+    reset_ticker,
     upsert_articles,
     upsert_classification,
     upsert_explanations,
@@ -110,7 +111,12 @@ def _get_or_classify(session: Session, ticker: str) -> tuple[Optional[str], list
     return classification.industry, classification.competitors
 
 
-def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> dict:
+def ingest_ticker(
+    ticker: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    force: bool = False,
+) -> dict:
     """Fetch prices (and best-effort news) for a ticker and persist them.
 
     This is the only function in the app that calls yfinance / the news
@@ -118,15 +124,24 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
     Postgres. Called either by the scheduler (app/scheduler.py, no args -
     "bring this ticker up to date") or by the manual `POST /api/ingest`
     endpoint (optionally with an explicit range to backfill).
+
+    `force=True` discards this ticker's existing coverage/prices/articles/
+    explanations/classification and re-ingests it as if brand new - using
+    the same range a first-time ingest would (the default lookback, or an
+    explicit start_date/end_date), not extending whatever coverage already
+    existed. The actual delete (`reset_ticker`) only happens after the price
+    fetch below succeeds, so a bad/renamed ticker can't wipe out
+    previously-good data for nothing.
     """
     ticker = ticker.upper().strip()
     end_date = end_date or date.today()
 
     with SessionLocal() as session:
-        coverage = get_coverage(session, ticker)
+        coverage = None if force else get_coverage(session, ticker)
         if start_date is None:
             # No explicit range: extend an already-tracked ticker forward to
-            # end_date, or backfill the default lookback for a brand-new one.
+            # end_date, or backfill the default lookback for a brand-new one
+            # (also the `force` path, since `coverage` is None above).
             start_date = coverage[1] + timedelta(days=1) if coverage else end_date - timedelta(
                 days=DEFAULT_LOOKBACK_DAYS
             )
@@ -139,6 +154,10 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
 
         df = fetch_price_history(ticker, fetch_start, fetch_end)  # TickerNotFoundError propagates
         points = to_price_points(df)
+
+        if force:
+            reset_ticker(session, ticker)
+
         upsert_prices(session, ticker, points)
         extend_coverage(session, ticker, min(p.date for p in points), max(p.date for p in points))
 
@@ -160,6 +179,7 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
 
         return {
             "ticker": ticker,
+            "forced": force,
             "prices_ingested": len(points),
             "articles_ingested": len(articles),
             "explanations_generated": explanations_generated,

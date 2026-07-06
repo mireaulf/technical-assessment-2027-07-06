@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,21 @@ from app.models import Article, PricePoint
 def get_coverage(session: Session, ticker: str) -> Optional[tuple[date, date]]:
     row = session.get(TickerPriceCoverage, ticker)
     return (row.min_date, row.max_date) if row else None
+
+
+def reset_ticker(session: Session, ticker: str) -> None:
+    """Delete everything persisted for a ticker - prices, coverage,
+    articles, explanations, classification - so a subsequent ingest starts
+    completely fresh rather than extending/merging with what's there.
+
+    Used by `ingest_ticker(..., force=True)` (app/ingestion.py). Callers
+    should only invoke this once they already have good replacement data in
+    hand (e.g. after a successful price fetch), not before, so a bad or
+    renamed ticker can't wipe out previously-good data for nothing.
+    """
+    for model in (PriceRow, TickerPriceCoverage, ArticleRow, MovementExplanationRow, TickerClassificationRow):
+        session.execute(delete(model).where(model.ticker == ticker))
+    session.commit()
 
 
 def list_tracked_tickers(session: Session) -> list[str]:

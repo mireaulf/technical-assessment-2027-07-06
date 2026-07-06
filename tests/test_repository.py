@@ -8,12 +8,14 @@ from app.models import Article, PricePoint
 from app.repository import (
     extend_coverage,
     get_articles,
+    get_classification,
     get_coverage,
     get_explanations,
     get_prices,
     list_classified_industries,
     list_coverage,
     list_tracked_tickers,
+    reset_ticker,
     upsert_articles,
     upsert_classification,
     upsert_explanations,
@@ -211,3 +213,37 @@ def test_list_classified_industries_dedupes_across_tickers(session):
     industries = list_classified_industries(session)
 
     assert industries.count("Shared Test Widgetmaking") == 1
+
+
+def test_reset_ticker_deletes_all_persisted_data(session):
+    extend_coverage(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+    upsert_prices(
+        session,
+        TEST_TICKER,
+        [PricePoint(date=date(2026, 1, 2), open=10, high=11, low=9, close=10.5, volume=100, pct_change=None)],
+    )
+    upsert_articles(
+        session,
+        TEST_TICKER,
+        [Article(title="Some headline", url="http://example.com/reset-story", published_at=datetime(2026, 1, 2, tzinfo=timezone.utc))],
+    )
+    upsert_explanations(session, TEST_TICKER, {date(2026, 1, 2): "Moved on earnings."}, model="claude-test-model")
+    upsert_classification(session, TEST_TICKER, "Distinct Test Widgetmaking", ["Competitor Co"])
+
+    reset_ticker(session, TEST_TICKER)
+
+    assert get_coverage(session, TEST_TICKER) is None
+    assert get_prices(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31)) == []
+    assert get_articles(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31)) == []
+    assert get_explanations(session, TEST_TICKER, [date(2026, 1, 2)]) == {}
+    assert get_classification(session, TEST_TICKER) is None
+
+
+def test_reset_ticker_does_not_affect_other_tickers(session):
+    extend_coverage(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+    extend_coverage(session, TEST_TICKER_2, date(2026, 1, 1), date(2026, 1, 31))
+
+    reset_ticker(session, TEST_TICKER)
+
+    assert get_coverage(session, TEST_TICKER) is None
+    assert get_coverage(session, TEST_TICKER_2) == (date(2026, 1, 1), date(2026, 1, 31))

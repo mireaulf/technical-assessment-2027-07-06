@@ -94,6 +94,15 @@ def trigger_ingest(
         None, description="Defaults to the day after existing coverage, or a 180-day backfill for a new ticker"
     ),
     end_date: Optional[date] = Query(None, description="Defaults to today"),
+    force: bool = Query(
+        False,
+        description=(
+            "Discard this ticker's existing coverage/prices/articles/explanations/classification "
+            "and re-ingest from scratch (the default lookback, or start_date/end_date if given), "
+            "instead of extending existing coverage. The reset only happens after prices are "
+            "re-fetched successfully, so a bad ticker won't destroy existing good data."
+        ),
+    ),
 ):
     """Manually (re)fetch a ticker's prices and news from source and persist them.
 
@@ -103,6 +112,6 @@ def trigger_ingest(
     once via this endpoint.
     """
     try:
-        return ingest_ticker(ticker, start_date, end_date)
+        return ingest_ticker(ticker, start_date, end_date, force=force)
     except TickerNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
