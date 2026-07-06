@@ -31,6 +31,8 @@ def _format_context(analysis: TickerAnalysis) -> str:
             f"- {m.date}: {m.direction.upper()} {m.pct_change:+.2f}% "
             f"(close {m.prev_close} -> {m.close})"
         )
+        if m.explanation:
+            lines.append(f"    Pre-generated explanation: {m.explanation}")
         if m.articles:
             for a in m.articles:
                 published = a.published_at.date() if a.published_at else "unknown date"

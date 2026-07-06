@@ -2,17 +2,28 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
+from app.config import settings
 from app.db import SessionLocal
+from app.explain import generate_explanations
+from app.models import Article
 from app.news.base import NewsProvider
 from app.news.yfinance_provider import YFinanceNewsProvider
 from app.repository import (
     extend_coverage,
+    get_articles,
     get_coverage,
+    get_explanations,
     list_tracked_tickers,
     upsert_articles,
+    upsert_explanations,
     upsert_prices,
 )
-from app.stock_service import fetch_price_history, to_price_points
+from app.stock_service import (
+    attach_news_to_movements,
+    detect_movements,
+    fetch_price_history,
+    to_price_points,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +31,14 @@ DEFAULT_LOOKBACK_DAYS = 180
 # Extra calendar days fetched before the true start so the first requested
 # day's pct_change has a real previous close to compare against.
 PCT_CHANGE_BUFFER_DAYS = 7
+
+# Threshold and news window used to decide which days get an explanation
+# generated at ingestion time. Fixed (unlike the per-request min_move_pct on
+# the read endpoints) since explanations are pre-computed once, not per
+# request - a request with a looser threshold may reveal extra movements
+# that were never candidates for a stored explanation.
+EXPLANATION_MIN_MOVE_PCT = 2.0
+EXPLANATION_NEWS_WINDOW_DAYS = 2
 
 _news_provider: NewsProvider = YFinanceNewsProvider()
 
@@ -63,13 +82,62 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
         except Exception:
             logger.exception("News fetch failed for %s (prices were still ingested)", ticker)
 
+        explanations_generated = 0
+        try:
+            explanations_generated = _generate_missing_explanations(session, ticker, points)
+        except Exception:
+            logger.exception("Explanation generation failed for %s (prices/news were still ingested)", ticker)
+
         return {
             "ticker": ticker,
             "prices_ingested": len(points),
             "articles_ingested": len(articles),
+            "explanations_generated": explanations_generated,
             "coverage_start": min(p.date for p in points),
             "coverage_end": max(p.date for p in points),
         }
+
+
+def _generate_missing_explanations(session, ticker: str, points: list) -> int:
+    """Pre-generate and store explanations for newly-qualifying movements.
+
+    Only covers the date range just fetched (not the ticker's whole
+    history) - on a first-time backfill that can still mean many movements
+    at once, which is the up-front cost this design deliberately accepts in
+    exchange for the read path never depending on Claude.
+    """
+    movements = detect_movements(points, EXPLANATION_MIN_MOVE_PCT)
+    if not movements:
+        return 0
+
+    already_explained = get_explanations(session, ticker, [m.date for m in movements])
+    candidates = [m for m in movements if m.date not in already_explained]
+    if not candidates:
+        return 0
+
+    buffer = timedelta(days=EXPLANATION_NEWS_WINDOW_DAYS)
+    window_start = min(m.date for m in candidates) - buffer
+    window_end = max(m.date for m in candidates) + buffer
+    nearby_articles = [
+        Article(
+            title=r.title,
+            url=r.url,
+            source=r.source,
+            published_at=r.published_at,
+            summary=r.summary,
+        )
+        for r in get_articles(session, ticker, window_start, window_end)
+    ]
+    attach_news_to_movements(candidates, nearby_articles, window_days=EXPLANATION_NEWS_WINDOW_DAYS)
+
+    explainable = [m for m in candidates if m.articles]
+    if not explainable:
+        return 0
+
+    explanations = generate_explanations(ticker, explainable)
+    if explanations:
+        upsert_explanations(session, ticker, explanations, model=settings.anthropic_model)
+    return len(explanations)
 
 
 def ingest_tracked_tickers() -> list[dict]:

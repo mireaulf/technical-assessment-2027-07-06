@@ -30,6 +30,10 @@ class Movement(BaseModel):
     pct_change: float
     direction: str  # "up" | "down"
     articles: list[Article] = []
+    # Pre-generated at ingestion time (see app/explain.py) when articles were
+    # available - None if never generated (no nearby news yet, below the
+    # ingestion-time explanation threshold, or ANTHROPIC_API_KEY unset).
+    explanation: Optional[str] = None
 
 
 class TickerAnalysis(BaseModel):
