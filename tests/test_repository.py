@@ -11,13 +11,16 @@ from app.repository import (
     get_coverage,
     get_explanations,
     get_prices,
+    list_coverage,
     list_tracked_tickers,
     upsert_articles,
+    upsert_classification,
     upsert_explanations,
     upsert_prices,
 )
 
 TEST_TICKER = "TEST_TICKER"
+TEST_TICKER_2 = "TEST_TICKER_2"
 
 
 @pytest.fixture
@@ -32,8 +35,8 @@ def session():
     with SessionLocal() as s:
         yield s
         # Clean up rows created by this ticker so re-runs stay idempotent.
-        for table in ("articles", "prices", "ticker_price_coverage", "movement_explanations"):
-            s.execute(text(f"DELETE FROM {table} WHERE ticker = :t"), {"t": TEST_TICKER})
+        for table in ("articles", "prices", "ticker_price_coverage", "movement_explanations", "ticker_classifications"):
+            s.execute(text(f"DELETE FROM {table} WHERE ticker IN (:t1, :t2)"), {"t1": TEST_TICKER, "t2": TEST_TICKER_2})
         s.commit()
 
 
@@ -156,3 +159,39 @@ def test_upsert_explanations_overwrites_on_conflict(session):
     result = get_explanations(session, TEST_TICKER, [date(2026, 1, 2)])
 
     assert result == {date(2026, 1, 2): "Revised."}
+
+
+def test_list_coverage_includes_industry_when_classified(session):
+    extend_coverage(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+    upsert_classification(session, TEST_TICKER, "Semiconductors", ["AMD", "Intel"])
+
+    rows = {coverage.ticker: industry for coverage, industry in list_coverage(session)}
+
+    assert rows[TEST_TICKER] == "Semiconductors"
+
+
+def test_list_coverage_industry_is_none_when_unclassified(session):
+    extend_coverage(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+
+    rows = {coverage.ticker: industry for coverage, industry in list_coverage(session)}
+
+    assert rows[TEST_TICKER] is None
+
+
+def test_list_coverage_filters_by_industry_case_insensitive_substring(session):
+    extend_coverage(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+    upsert_classification(session, TEST_TICKER, "Semiconductors", [])
+    extend_coverage(session, TEST_TICKER_2, date(2026, 1, 1), date(2026, 1, 31))
+    upsert_classification(session, TEST_TICKER_2, "Consumer Electronics", [])
+
+    rows = list_coverage(session, industry="semi")
+
+    assert [coverage.ticker for coverage, _ in rows] == [TEST_TICKER]
+
+
+def test_list_coverage_industry_filter_excludes_unclassified_tickers(session):
+    extend_coverage(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+
+    rows = list_coverage(session, industry="semi")
+
+    assert TEST_TICKER not in [coverage.ticker for coverage, _ in rows]

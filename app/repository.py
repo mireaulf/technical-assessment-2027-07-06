@@ -31,10 +31,31 @@ def list_tracked_tickers(session: Session) -> list[str]:
     return list(session.scalars(stmt))
 
 
-def list_coverage(session: Session) -> list[TickerPriceCoverage]:
-    """Every tracked ticker plus its ingested date range, for `GET /api/tickers`."""
-    stmt = select(TickerPriceCoverage).order_by(TickerPriceCoverage.ticker)
-    return list(session.scalars(stmt))
+def list_coverage(
+    session: Session, industry: Optional[str] = None
+) -> list[tuple[TickerPriceCoverage, Optional[str]]]:
+    """Every tracked ticker plus its ingested date range and (if classified)
+    industry, for `GET /api/tickers`.
+
+    `industry` does a case-insensitive substring match rather than an exact
+    one - each ticker's industry label is generated independently by Claude
+    (see app/news/classifier.py), not drawn from a fixed taxonomy, so two
+    related tickers may be worded slightly differently (e.g. "Semiconductors"
+    vs. "Semiconductor Manufacturing"). Tickers with no classification yet
+    (NEWSAPI_API_KEY unset, or not yet ingested) are excluded when filtering.
+    """
+    stmt = (
+        select(TickerPriceCoverage, TickerClassificationRow.industry)
+        .join(
+            TickerClassificationRow,
+            TickerClassificationRow.ticker == TickerPriceCoverage.ticker,
+            isouter=True,
+        )
+        .order_by(TickerPriceCoverage.ticker)
+    )
+    if industry:
+        stmt = stmt.where(TickerClassificationRow.industry.ilike(f"%{industry}%"))
+    return [tuple(row) for row in session.execute(stmt).all()]
 
 
 def extend_coverage(session: Session, ticker: str, start: date, end: date) -> None:

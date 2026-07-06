@@ -63,6 +63,9 @@ class TrackedTicker(BaseModel):
     ticker: str
     data_coverage_start: Date
     data_coverage_end: Date
+    # Claude-classified industry (see app/news/classifier.py) - only present
+    # for tickers ingested with NEWSAPI_API_KEY set; None otherwise.
+    industry: Optional[str] = None
 
 
 class ChatMessage(BaseModel):

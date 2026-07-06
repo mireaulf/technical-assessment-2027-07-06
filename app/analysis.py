@@ -84,10 +84,19 @@ def get_ticker_analysis(
         )
 
 
-def list_tracked_tickers() -> list[TrackedTicker]:
-    """Every ticker that's been ingested at least once, with its data range."""
+def list_tracked_tickers(industry: Optional[str] = None) -> list[TrackedTicker]:
+    """Every ticker that's been ingested at least once, with its data range.
+
+    `industry` filters by the Claude-classified industry (case-insensitive
+    substring match - see `list_coverage`'s docstring for why not exact).
+    """
     with SessionLocal() as session:
         return [
-            TrackedTicker(ticker=row.ticker, data_coverage_start=row.min_date, data_coverage_end=row.max_date)
-            for row in list_coverage(session)
+            TrackedTicker(
+                ticker=coverage.ticker,
+                data_coverage_start=coverage.min_date,
+                data_coverage_end=coverage.max_date,
+                industry=ticker_industry,
+            )
+            for coverage, ticker_industry in list_coverage(session, industry)
         ]

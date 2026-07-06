@@ -27,9 +27,18 @@ def health():
 
 
 @app.get("/api/tickers", response_model=list[TrackedTicker])
-def get_tracked_tickers():
+def get_tracked_tickers(
+    industry: Optional[str] = Query(
+        None,
+        description=(
+            "Case-insensitive substring filter on the ticker's Claude-classified industry "
+            "(Medium news tier, requires NEWSAPI_API_KEY - see README). Tickers without a "
+            "classification yet are excluded when this is set."
+        ),
+    ),
+):
     """Every ticker that's been ingested at least once, with its data range."""
-    return list_tracked_tickers()
+    return list_tracked_tickers(industry)
 
 
 @app.get("/api/tickers/{ticker}", response_model=TickerAnalysis)
