@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from typing import Optional
 
@@ -6,9 +7,14 @@ from fastapi import FastAPI, HTTPException, Query
 from app.analysis import get_ticker_analysis, list_industries, list_tracked_tickers
 from app.chat import answer_chat
 from app.db import init_db
-from app.ingestion import ingest_ticker
+from app.ingestion import ingest_ticker, log_active_news_providers
 from app.models import ChatRequest, ChatResponse, TickerAnalysis, TrackedTicker
 from app.stock_service import TickerNotFoundError, TickerNotIngestedError
+
+# Not configured anywhere else in this process - without this, app.* loggers
+# (e.g. app.ingestion's INFO-level startup log below) have no handler and
+# are silently dropped, since the root logger's default level is WARNING.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 app = FastAPI(
     title="Stock Move Explainer",
@@ -19,6 +25,7 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup():
     init_db()
+    log_active_news_providers()
 
 
 @app.get("/health")

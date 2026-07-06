@@ -131,7 +131,7 @@ All runtime config is environment variables, loaded via `app/config.py` (`pydant
 - `DATABASE_URL` — the value in `.env` (`localhost:5432`) is for anything running on the host, i.e. only `pytest`/`psql` today. Both the `api` and `ingestion` Compose services override this to the in-network hostname `db` instead — see `docker-compose.yml`.
 - `INGESTION_INTERVAL_SECONDS` — only read by `app/scheduler.py`; irrelevant to the API process.
 - `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` — required for `POST /api/chat`, and read by the `ingestion` container too (explanation generation and industry/competitor classification at ingest time both skip gracefully, logging and doing nothing, if this isn't set - neither fails the ingestion run).
-- `EXA_API_KEY` — optional; activates industry moves (industry/competitor news via `ExaProvider`, see `app/news/exa_provider.py`) on top of the always-on yfinance company news. Unset, behavior is unchanged.
+- `EXA_API_KEY` — optional; activates industry moves (industry/competitor news via `ExaProvider`, see `app/news/exa_provider.py`) on top of the always-on yfinance company news. Unset, behavior is unchanged. Both the `api` and `ingestion` processes log which `NewsProvider`(s) are active at startup (`app/ingestion.py`'s `log_active_news_providers`, called from `app/main.py`'s startup hook and `app/scheduler.py`'s `main()`) — check `docker compose logs api` / `logs ingestion` if you're not sure whether a key actually took effect.
 - `GNEWS_API_KEY` — unused today (no provider reads it); reserved for a possible second broad-news provider.
 
 ## Operating notes / known gaps

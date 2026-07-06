@@ -62,6 +62,30 @@ def _build_news_provider() -> NewsProvider:
 _news_provider: NewsProvider = _build_news_provider()
 
 
+def _provider_names() -> list[str]:
+    if isinstance(_news_provider, CompositeNewsProvider):
+        return [type(p).__name__ for p in _news_provider.providers]
+    return [type(_news_provider).__name__]
+
+
+def log_active_news_providers() -> None:
+    """Log which NewsProvider(s) are active for this process.
+
+    `_news_provider` is already built eagerly at import time above; this is
+    split out as its own function so callers (app/main.py's startup hook,
+    app/scheduler.py's main()) can invoke it after logging is actually
+    configured, rather than relying on it being set up before this module
+    gets imported - both entry points import this module for other reasons
+    (ingest_ticker / ingest_tracked_tickers) well before they'd otherwise
+    configure logging.
+    """
+    names = ", ".join(_provider_names())
+    if _EXA_CONFIGURED:
+        logger.info("Active news providers: %s", names)
+    else:
+        logger.info("Active news providers: %s (industry moves inactive - set EXA_API_KEY to enable)", names)
+
+
 def _get_or_classify(session: Session, ticker: str) -> tuple[Optional[str], list[str]]:
     """Industry + competitors for a ticker, classifying (and caching) via
     Claude on first use. Returns (None, []) if classification isn't
