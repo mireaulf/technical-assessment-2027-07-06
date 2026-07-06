@@ -36,7 +36,8 @@ def _format_context(analysis: TickerAnalysis) -> str:
                 lines.append(f"    Pre-generated explanation: {m.explanation}")
             for a in m.articles:
                 published = a.published_at.date() if a.published_at else "unknown date"
-                lines.append(f"    * [{published}] {a.title} ({a.source or 'unknown source'})")
+                tag = "" if a.category == "company" else f" ({a.category})"
+                lines.append(f"    * [{published}]{tag} {a.title} ({a.source or 'unknown source'})")
         else:
             lines.append(f"    * {m.explanation or 'No related news articles found for this date.'}")
     return "\n".join(lines)

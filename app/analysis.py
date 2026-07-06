@@ -3,7 +3,14 @@ from typing import Optional
 
 from app.db import SessionLocal
 from app.models import Article, PricePoint, TickerAnalysis, TrackedTicker
-from app.repository import get_articles, get_coverage, get_explanations, get_prices, list_coverage
+from app.repository import (
+    get_articles,
+    get_coverage,
+    get_explanations,
+    get_prices,
+    list_classified_industries,
+    list_coverage,
+)
 from app.stock_service import TickerNotIngestedError, attach_news_to_movements, detect_movements
 
 DEFAULT_LOOKBACK_DAYS = 180
@@ -30,6 +37,7 @@ def _row_to_article(row) -> Article:
         source=row.source,
         published_at=row.published_at,
         summary=row.summary,
+        category=row.category,
     )
 
 
@@ -91,10 +99,25 @@ def get_ticker_analysis(
         )
 
 
-def list_tracked_tickers() -> list[TrackedTicker]:
-    """Every ticker that's been ingested at least once, with its data range."""
+def list_tracked_tickers(industry: Optional[str] = None) -> list[TrackedTicker]:
+    """Every ticker that's been ingested at least once, with its data range.
+
+    `industry` filters by the Claude-classified industry (case-insensitive
+    substring match - see `list_coverage`'s docstring for why not exact).
+    """
     with SessionLocal() as session:
         return [
-            TrackedTicker(ticker=row.ticker, data_coverage_start=row.min_date, data_coverage_end=row.max_date)
-            for row in list_coverage(session)
+            TrackedTicker(
+                ticker=coverage.ticker,
+                data_coverage_start=coverage.min_date,
+                data_coverage_end=coverage.max_date,
+                industry=ticker_industry,
+            )
+            for coverage, ticker_industry in list_coverage(session, industry)
         ]
+
+
+def list_industries() -> list[str]:
+    """Every distinct industry classified so far, for `GET /api/industries`."""
+    with SessionLocal() as session:
+        return list_classified_industries(session)

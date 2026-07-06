@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 PROMPT_TEMPLATE = """\
 You are a financial analyst assistant. For each stock movement listed below, \
 write a concise 1-2 sentence explanation of why the stock likely moved, based \
-only on the news articles given for that date. If none of the articles \
-plausibly explain the move, say so plainly instead of guessing.
+only on the news articles given for that date. Articles tagged (industry) or \
+(competitor) are broader context, not company-specific news - only lean on them \
+if no company-specific article plausibly explains the move. If none of the \
+articles plausibly explain the move, say so plainly instead of guessing.
 
 Respond with ONLY a JSON array, no other text, in this exact shape:
 [{{"date": "YYYY-MM-DD", "explanation": "..."}}, ...]
@@ -33,7 +35,8 @@ def _format_movements_block(ticker: str, movements: list[Movement]) -> str:
         for a in m.articles:
             published = a.published_at.date() if a.published_at else "unknown date"
             summary = f": {a.summary}" if a.summary else ""
-            lines.append(f"  - [{published}] {a.title} ({a.source or 'unknown source'}){summary}")
+            tag = "" if a.category == "company" else f" ({a.category})"
+            lines.append(f"  - [{published}]{tag} {a.title} ({a.source or 'unknown source'}){summary}")
         lines.append("")
     return "\n".join(lines)
 
