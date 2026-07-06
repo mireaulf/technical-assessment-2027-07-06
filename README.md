@@ -26,7 +26,7 @@ Everything - Postgres, the API, and the ingestion worker - runs in Docker. There
 ./scripts/infra.sh start   # builds and starts Postgres, the API, and the ingestion worker
 ```
 
-The API is then up at `http://localhost:8000` (interactive docs at `/docs`). `app/` is bind-mounted into the `api` container and Uvicorn runs with `--reload`, so editing code on the host reloads it inside the container immediately - no rebuild, no restart. A code change that adds a new dependency to `requirements.txt` does need a rebuild: `docker compose up -d --build api`.
+The API is then up at `http://localhost:8000` (interactive docs at `/docs`). `app/` is bind-mounted into the `api` container and Uvicorn runs with `--reload`, so editing code on the host reloads it inside the container immediately - no rebuild, no restart. A code change that adds a new dependency to `pyproject.toml` does need a rebuild: `docker compose up -d --build api`.
 
 Tables are created automatically on startup (`app/db.py:init_db`) by both the API and the ingestion worker.
 
@@ -51,11 +51,9 @@ Managing the stack: `./scripts/infra.sh {start|stop|restart|reset|status|logs}` 
 Tests run on the host (not in Docker), against Postgres via the port `docker-compose.yml` publishes to `localhost:5432`:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 `tests/test_stock_service.py` covers the pure move-detection and news-alignment logic (no network, no DB). `tests/test_repository.py` exercises the Postgres cache-aside layer (upsert/dedupe/coverage-union) against a real database — those tests auto-skip if Postgres isn't reachable (i.e. the stack isn't running), so `pytest` still passes cleanly either way.
@@ -78,7 +76,7 @@ python -m pytest tests/ -v
   - This is a real, if simple, separate process: it's its own Docker Compose service and Dockerfile, not a background thread inside the API. The API and the worker only communicate through Postgres.
   - Trade-off: the scheduler is a plain `while True: ...; sleep(interval)` loop rather than something like Celery/APScheduler/cron — sufficient for one worker on one schedule, but it wouldn't scale to per-ticker schedules, retries with backoff, or multiple workers coordinating without adding a real job queue.
   - The response now separates the requested range (`start_date`/`end_date`) from what's actually persisted (`data_coverage_start`/`data_coverage_end`), so a caller can tell if the worker hasn't caught up yet.
-- **The API itself runs in Docker too** (`api` service in `docker-compose.yml`, same `Dockerfile` as the ingestion worker with `command:` overridden to run Uvicorn instead). `app/` is bind-mounted over the image's copy and Uvicorn runs with `--reload`, so there's no "start the server" step separate from `docker compose up` and no loss of the fast edit/test loop you'd get running it locally. Trade-off: a change to `requirements.txt` isn't picked up by the mount, since dependencies are installed at build time — that path needs an explicit `--build`.
+- **The API itself runs in Docker too** (`api` service in `docker-compose.yml`, same `Dockerfile` as the ingestion worker with `command:` overridden to run Uvicorn instead). `app/` is bind-mounted over the image's copy and Uvicorn runs with `--reload`, so there's no "start the server" step separate from `docker compose up` and no loss of the fast edit/test loop you'd get running it locally. Trade-off: a change to `pyproject.toml` isn't picked up by the mount, since dependencies are installed at build time — that path needs an explicit `--build`.
 
 ## Submission questions
 
