@@ -1,17 +1,38 @@
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.db import ArticleRow, MovementExplanationRow, PriceRow, TickerPriceCoverage
+from app.db import (
+    ArticleRow,
+    MovementExplanationRow,
+    PriceRow,
+    TickerClassificationRow,
+    TickerPriceCoverage,
+)
 from app.models import Article, PricePoint
 
 
 def get_coverage(session: Session, ticker: str) -> Optional[tuple[date, date]]:
     row = session.get(TickerPriceCoverage, ticker)
     return (row.min_date, row.max_date) if row else None
+
+
+def reset_ticker(session: Session, ticker: str) -> None:
+    """Delete everything persisted for a ticker - prices, coverage,
+    articles, explanations, classification - so a subsequent ingest starts
+    completely fresh rather than extending/merging with what's there.
+
+    Used by `ingest_ticker(..., force=True)` (app/ingestion.py). Callers
+    should only invoke this once they already have good replacement data in
+    hand (e.g. after a successful price fetch), not before, so a bad or
+    renamed ticker can't wipe out previously-good data for nothing.
+    """
+    for model in (PriceRow, TickerPriceCoverage, ArticleRow, MovementExplanationRow, TickerClassificationRow):
+        session.execute(delete(model).where(model.ticker == ticker))
+    session.commit()
 
 
 def list_tracked_tickers(session: Session) -> list[str]:
@@ -25,10 +46,31 @@ def list_tracked_tickers(session: Session) -> list[str]:
     return list(session.scalars(stmt))
 
 
-def list_coverage(session: Session) -> list[TickerPriceCoverage]:
-    """Every tracked ticker plus its ingested date range, for `GET /api/tickers`."""
-    stmt = select(TickerPriceCoverage).order_by(TickerPriceCoverage.ticker)
-    return list(session.scalars(stmt))
+def list_coverage(
+    session: Session, industry: Optional[str] = None
+) -> list[tuple[TickerPriceCoverage, Optional[str]]]:
+    """Every tracked ticker plus its ingested date range and (if classified)
+    industry, for `GET /api/tickers`.
+
+    `industry` does a case-insensitive substring match rather than an exact
+    one - each ticker's industry label is generated independently by Claude
+    (see app/news/classifier.py), not drawn from a fixed taxonomy, so two
+    related tickers may be worded slightly differently (e.g. "Semiconductors"
+    vs. "Semiconductor Manufacturing"). Tickers with no classification yet
+    (EXA_API_KEY unset, or not yet ingested) are excluded when filtering.
+    """
+    stmt = (
+        select(TickerPriceCoverage, TickerClassificationRow.industry)
+        .join(
+            TickerClassificationRow,
+            TickerClassificationRow.ticker == TickerPriceCoverage.ticker,
+            isouter=True,
+        )
+        .order_by(TickerPriceCoverage.ticker)
+    )
+    if industry:
+        stmt = stmt.where(TickerClassificationRow.industry.ilike(f"%{industry}%"))
+    return [tuple(row) for row in session.execute(stmt).all()]
 
 
 def extend_coverage(session: Session, ticker: str, start: date, end: date) -> None:
@@ -94,6 +136,7 @@ def upsert_articles(session: Session, ticker: str, articles: list[Article]) -> N
             "source": a.source,
             "published_at": a.published_at,
             "summary": a.summary,
+            "category": a.category,
             "fetched_at": now,
         }
         for a in articles
@@ -102,7 +145,17 @@ def upsert_articles(session: Session, ticker: str, articles: list[Article]) -> N
     if not rows:
         return
     stmt = pg_insert(ArticleRow).values(rows)
-    stmt = stmt.on_conflict_do_nothing(index_elements=["ticker", "url"])
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["ticker", "url"],
+        set_={
+            "title": stmt.excluded.title,
+            "source": stmt.excluded.source,
+            "published_at": stmt.excluded.published_at,
+            "summary": stmt.excluded.summary,
+            "category": stmt.excluded.category,
+            "fetched_at": stmt.excluded.fetched_at,
+        },
+    )
     session.execute(stmt)
     session.commit()
 
@@ -143,4 +196,38 @@ def upsert_explanations(session: Session, ticker: str, explanations: dict[date, 
         set_={"explanation": stmt.excluded.explanation, "model": stmt.excluded.model, "generated_at": stmt.excluded.generated_at},
     )
     session.execute(stmt)
+    session.commit()
+
+
+def get_classification(session: Session, ticker: str) -> Optional[TickerClassificationRow]:
+    return session.get(TickerClassificationRow, ticker)
+
+
+def list_classified_industries(session: Session) -> list[str]:
+    """Every distinct industry classified so far, for `GET /api/industries`.
+
+    Not a fixed taxonomy - each entry was independently derived by Claude
+    for some ticker (see app/news/classifier.py), so this list only grows
+    as more tickers get ingested with EXA_API_KEY set.
+    """
+    stmt = (
+        select(TickerClassificationRow.industry)
+        .where(TickerClassificationRow.industry.isnot(None))
+        .distinct()
+        .order_by(TickerClassificationRow.industry)
+    )
+    return list(session.scalars(stmt))
+
+
+def upsert_classification(session: Session, ticker: str, industry: str, competitors: list[str]) -> None:
+    now = datetime.now(timezone.utc)
+    row = session.get(TickerClassificationRow, ticker)
+    if row:
+        row.industry = industry
+        row.competitors = competitors
+        row.classified_at = now
+    else:
+        session.add(
+            TickerClassificationRow(ticker=ticker, industry=industry, competitors=competitors, classified_at=now)
+        )
     session.commit()

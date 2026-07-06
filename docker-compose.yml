@@ -26,8 +26,14 @@ services:
       # .env only holds 1Password references (op://...) - these pull the
       # resolved secret values from the shell, which `op run` populates
       # (see scripts/infra.sh). Takes precedence over env_file above.
+      # All four secret vars are mapped here (not just ANTHROPIC_*) because
+      # `POST /api/ingest/{ticker}` runs in this container too, and it
+      # exercises the same classification/news-provider code path as the
+      # ingestion service below.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      GNEWS_API_KEY: ${GNEWS_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:
@@ -45,8 +51,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://stockmoves:stockmoves@db:5432/stockmoves
       # See the api service above - resolved via `op run`, not read from the
-      # literal op:// references in env_file.
-      NEWSAPI_API_KEY: ${NEWSAPI_API_KEY:-}
+      # literal op:// references in env_file. All four mapped here too: this
+      # is the container that actually calls Claude/Exa on a schedule.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
       GNEWS_API_KEY: ${GNEWS_API_KEY:-}
     depends_on:
       db:

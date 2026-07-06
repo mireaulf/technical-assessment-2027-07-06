@@ -14,11 +14,18 @@ class YFinanceNewsProvider(NewsProvider):
     recent ~10-20 stories per ticker, not an arbitrary historical
     date-range archive. This means it aligns well with recent price
     movements but will return no articles for older movements. A paid
-    provider (NewsAPI/GNews/Exa) plugged in behind `NewsProvider` would
-    remove that limitation.
+    provider plugged in behind `NewsProvider` would remove that limitation
+    (see `ExaProvider`, though it's driven by industry/competitor context
+    rather than the ticker itself - see app/news/exa_provider.py).
     """
 
-    def get_news(self, ticker: str, company_name: Optional[str] = None) -> list[Article]:
+    def get_news(
+        self,
+        ticker: str,
+        company_name: Optional[str] = None,
+        industry: Optional[str] = None,
+        competitors: Optional[list[str]] = None,
+    ) -> list[Article]:
         raw = yf.Ticker(ticker).news or []
         articles = []
         for item in raw:

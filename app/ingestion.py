@@ -2,19 +2,28 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
 from app.config import settings
 from app.db import SessionLocal
 from app.explain import generate_explanations
 from app.models import Article
 from app.news.base import NewsProvider
+from app.news.classifier import classify_ticker
+from app.news.composite_provider import CompositeNewsProvider
+from app.news.exa_provider import ExaProvider
 from app.news.yfinance_provider import YFinanceNewsProvider
 from app.repository import (
     extend_coverage,
     get_articles,
+    get_classification,
     get_coverage,
     get_explanations,
+    list_classified_industries,
     list_tracked_tickers,
+    reset_ticker,
     upsert_articles,
+    upsert_classification,
     upsert_explanations,
     upsert_prices,
 )
@@ -40,10 +49,74 @@ PCT_CHANGE_BUFFER_DAYS = 7
 EXPLANATION_MIN_MOVE_PCT = 2.0
 EXPLANATION_NEWS_WINDOW_DAYS = 2
 
-_news_provider: NewsProvider = YFinanceNewsProvider()
+# Industry moves (industry/competitor news) only activates once an Exa key
+# is configured - without one, behavior is unchanged from the Easy tier.
+_EXA_CONFIGURED = bool(settings.exa_api_key)
 
 
-def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> dict:
+def _build_news_provider() -> NewsProvider:
+    if not _EXA_CONFIGURED:
+        return YFinanceNewsProvider()
+    return CompositeNewsProvider([YFinanceNewsProvider(), ExaProvider(settings.exa_api_key)])
+
+
+_news_provider: NewsProvider = _build_news_provider()
+
+
+def _provider_names() -> list[str]:
+    if isinstance(_news_provider, CompositeNewsProvider):
+        return [type(p).__name__ for p in _news_provider.providers]
+    return [type(_news_provider).__name__]
+
+
+def log_active_news_providers() -> None:
+    """Log which NewsProvider(s) are active for this process.
+
+    `_news_provider` is already built eagerly at import time above; this is
+    split out as its own function so callers (app/main.py's startup hook,
+    app/scheduler.py's main()) can invoke it after logging is actually
+    configured, rather than relying on it being set up before this module
+    gets imported - both entry points import this module for other reasons
+    (ingest_ticker / ingest_tracked_tickers) well before they'd otherwise
+    configure logging.
+    """
+    names = ", ".join(_provider_names())
+    if _EXA_CONFIGURED:
+        logger.info("Active news providers: %s", names)
+    else:
+        logger.info("Active news providers: %s (industry moves inactive - set EXA_API_KEY to enable)", names)
+
+
+def _get_or_classify(session: Session, ticker: str) -> tuple[Optional[str], list[str]]:
+    """Industry + competitors for a ticker, classifying (and caching) via
+    Claude on first use. Returns (None, []) if classification isn't
+    available or fails - callers should treat that as "no industry moves
+    context for this ticker" rather than an error.
+    """
+    row = get_classification(session, ticker)
+    if row is not None:
+        return row.industry, row.competitors
+
+    if not settings.anthropic_api_key:
+        return None, []
+
+    existing_industries = list_classified_industries(session)
+    classification = classify_ticker(
+        ticker, settings.anthropic_api_key, settings.anthropic_model, existing_industries
+    )
+    if classification is None:
+        return None, []
+
+    upsert_classification(session, ticker, classification.industry, classification.competitors)
+    return classification.industry, classification.competitors
+
+
+def ingest_ticker(
+    ticker: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    force: bool = False,
+) -> dict:
     """Fetch prices (and best-effort news) for a ticker and persist them.
 
     This is the only function in the app that calls yfinance / the news
@@ -51,15 +124,24 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
     Postgres. Called either by the scheduler (app/scheduler.py, no args -
     "bring this ticker up to date") or by the manual `POST /api/ingest`
     endpoint (optionally with an explicit range to backfill).
+
+    `force=True` discards this ticker's existing coverage/prices/articles/
+    explanations/classification and re-ingests it as if brand new - using
+    the same range a first-time ingest would (the default lookback, or an
+    explicit start_date/end_date), not extending whatever coverage already
+    existed. The actual delete (`reset_ticker`) only happens after the price
+    fetch below succeeds, so a bad/renamed ticker can't wipe out
+    previously-good data for nothing.
     """
     ticker = ticker.upper().strip()
     end_date = end_date or date.today()
 
     with SessionLocal() as session:
-        coverage = get_coverage(session, ticker)
+        coverage = None if force else get_coverage(session, ticker)
         if start_date is None:
             # No explicit range: extend an already-tracked ticker forward to
-            # end_date, or backfill the default lookback for a brand-new one.
+            # end_date, or backfill the default lookback for a brand-new one
+            # (also the `force` path, since `coverage` is None above).
             start_date = coverage[1] + timedelta(days=1) if coverage else end_date - timedelta(
                 days=DEFAULT_LOOKBACK_DAYS
             )
@@ -72,12 +154,19 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
 
         df = fetch_price_history(ticker, fetch_start, fetch_end)  # TickerNotFoundError propagates
         points = to_price_points(df)
+
+        if force:
+            reset_ticker(session, ticker)
+
         upsert_prices(session, ticker, points)
         extend_coverage(session, ticker, min(p.date for p in points), max(p.date for p in points))
 
         articles = []
         try:
-            articles = _news_provider.get_news(ticker)
+            industry, competitors = (None, [])
+            if _EXA_CONFIGURED:
+                industry, competitors = _get_or_classify(session, ticker)
+            articles = _news_provider.get_news(ticker, industry=industry, competitors=competitors)
             upsert_articles(session, ticker, articles)
         except Exception:
             logger.exception("News fetch failed for %s (prices were still ingested)", ticker)
@@ -90,6 +179,7 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
 
         return {
             "ticker": ticker,
+            "forced": force,
             "prices_ingested": len(points),
             "articles_ingested": len(articles),
             "explanations_generated": explanations_generated,
@@ -125,6 +215,7 @@ def _generate_missing_explanations(session, ticker: str, points: list) -> int:
             source=r.source,
             published_at=r.published_at,
             summary=r.summary,
+            category=r.category,
         )
         for r in get_articles(session, ticker, window_start, window_end)
     ]

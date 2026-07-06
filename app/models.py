@@ -21,6 +21,16 @@ class Article(BaseModel):
     source: Optional[str] = None
     published_at: Optional[datetime] = None
     summary: Optional[str] = None
+    # "company" (Easy tier), "industry" or "competitor" (industry moves).
+    category: str = "company"
+
+
+class TickerClassification(BaseModel):
+    """Best-effort LLM classification of a ticker, used to drive industry moves
+    (industry/competitor) news queries. See app/news/classifier.py."""
+
+    industry: str
+    competitors: list[str] = []
 
 
 class Movement(BaseModel):
@@ -57,6 +67,9 @@ class TrackedTicker(BaseModel):
     ticker: str
     data_coverage_start: Date
     data_coverage_end: Date
+    # Claude-classified industry (see app/news/classifier.py) - only present
+    # for tickers ingested with EXA_API_KEY set; None otherwise.
+    industry: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
