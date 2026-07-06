@@ -42,7 +42,7 @@ def list_coverage(
     (see app/news/classifier.py), not drawn from a fixed taxonomy, so two
     related tickers may be worded slightly differently (e.g. "Semiconductors"
     vs. "Semiconductor Manufacturing"). Tickers with no classification yet
-    (NEWSAPI_API_KEY unset, or not yet ingested) are excluded when filtering.
+    (EXA_API_KEY unset, or not yet ingested) are excluded when filtering.
     """
     stmt = (
         select(TickerPriceCoverage, TickerClassificationRow.industry)
@@ -193,7 +193,7 @@ def list_classified_industries(session: Session) -> list[str]:
 
     Not a fixed taxonomy - each entry was independently derived by Claude
     for some ticker (see app/news/classifier.py), so this list only grows
-    as more tickers get ingested with NEWSAPI_API_KEY set.
+    as more tickers get ingested with EXA_API_KEY set.
     """
     stmt = (
         select(TickerClassificationRow.industry)

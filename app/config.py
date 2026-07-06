@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     anthropic_model: str = DEFAULT_ANTHROPIC_MODEL
-    newsapi_api_key: str = ""
+    exa_api_key: str = ""
     gnews_api_key: str = ""
     database_url: str = "postgresql+psycopg2://stockmoves:stockmoves@localhost:5432/stockmoves"
     ingestion_interval_seconds: int = 6 * 60 * 60

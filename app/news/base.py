@@ -7,9 +7,10 @@ from app.models import Article
 class NewsProvider(ABC):
     """Pluggable source of company-specific news.
 
-    Swap in a NewsAPI/GNews/Exa-backed implementation for broader
-    (competitor/industry, macro/political) coverage without touching
-    callers - they only depend on this interface.
+    Swap in a differently-backed implementation for broader (competitor/
+    industry, macro/political) coverage without touching callers - they
+    only depend on this interface. See `ExaProvider` (app/news/exa_provider.py)
+    for the industry/competitor implementation currently wired up.
     """
 
     @abstractmethod

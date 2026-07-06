@@ -6,7 +6,7 @@ import pytest
 from app.models import Article
 from app.news.classifier import classify_ticker
 from app.news.composite_provider import CompositeNewsProvider
-from app.news.newsapi_provider import NewsAPIProvider
+from app.news.exa_provider import ExaProvider
 
 
 class _FakeTextBlock:
@@ -97,53 +97,55 @@ class _FakeHTTPResponse:
         return self._payload
 
 
-def _newsapi_payload(titles_and_urls):
+def _exa_payload(titles_and_urls):
     return {
-        "articles": [
+        "results": [
             {
                 "title": title,
                 "url": url,
-                "source": {"name": "Some Source"},
-                "publishedAt": "2026-01-02T00:00:00Z",
-                "description": "summary",
+                "author": "Some Source",
+                "publishedDate": "2026-01-02T00:00:00.000Z",
+                "summary": "summary",
             }
             for title, url in titles_and_urls
         ]
     }
 
 
-def test_newsapi_provider_tags_industry_and_competitor_queries(monkeypatch):
-    calls = []
+def test_exa_provider_tags_industry_and_competitor_queries(monkeypatch):
+    queries = []
 
-    def fake_get(url, params, timeout):
-        calls.append(params["q"])
-        if params["q"] == "Semiconductors":
-            return _FakeHTTPResponse(200, _newsapi_payload([("Industry story", "http://example.com/industry")]))
-        return _FakeHTTPResponse(200, _newsapi_payload([(f"{params['q']} story", f"http://example.com/{params['q']}")]))
+    def fake_post(url, headers, json, timeout):
+        queries.append(json["query"])
+        if "Semiconductors" in json["query"]:
+            return _FakeHTTPResponse(200, _exa_payload([("Industry story", "http://example.com/industry")]))
+        return _FakeHTTPResponse(200, _exa_payload([(f"{json['query']} story", f"http://example.com/{json['query']}")]))
 
-    monkeypatch.setattr("app.news.newsapi_provider.httpx.get", fake_get)
+    monkeypatch.setattr("app.news.exa_provider.httpx.post", fake_post)
 
-    provider = NewsAPIProvider(api_key="fake-key")
+    provider = ExaProvider(api_key="fake-key")
     articles = provider.get_news("NVDA", industry="Semiconductors", competitors=["AMD", "Intel"])
 
-    assert set(calls) == {"Semiconductors", "AMD", "Intel"}
+    assert any("Semiconductors" in q for q in queries)
+    assert any("AMD" in q for q in queries)
+    assert any("Intel" in q for q in queries)
     by_category = {a.category for a in articles}
     assert by_category == {"industry", "competitor"}
     assert len(articles) == 3
 
 
-def test_newsapi_provider_returns_empty_on_failure(monkeypatch):
+def test_exa_provider_returns_empty_on_failure(monkeypatch):
     monkeypatch.setattr(
-        "app.news.newsapi_provider.httpx.get", lambda url, params, timeout: _FakeHTTPResponse(500, {})
+        "app.news.exa_provider.httpx.post", lambda url, headers, json, timeout: _FakeHTTPResponse(500, {})
     )
 
-    provider = NewsAPIProvider(api_key="fake-key")
+    provider = ExaProvider(api_key="fake-key")
     assert provider.get_news("NVDA", industry="Semiconductors") == []
 
-    def raising_get(*args, **kwargs):
+    def raising_post(*args, **kwargs):
         raise ConnectionError("boom")
 
-    monkeypatch.setattr("app.news.newsapi_provider.httpx.get", raising_get)
+    monkeypatch.setattr("app.news.exa_provider.httpx.post", raising_post)
     assert provider.get_news("NVDA", industry="Semiconductors") == []
 
 

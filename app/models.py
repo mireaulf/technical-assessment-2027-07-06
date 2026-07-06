@@ -64,7 +64,7 @@ class TrackedTicker(BaseModel):
     data_coverage_start: Date
     data_coverage_end: Date
     # Claude-classified industry (see app/news/classifier.py) - only present
-    # for tickers ingested with NEWSAPI_API_KEY set; None otherwise.
+    # for tickers ingested with EXA_API_KEY set; None otherwise.
     industry: Optional[str] = None
 
 

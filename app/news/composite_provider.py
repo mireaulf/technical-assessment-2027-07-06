@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class CompositeNewsProvider(NewsProvider):
     """Fans a single `get_news` call out to several providers and merges
     the results, deduped by URL. One provider failing doesn't drop the
-    others' articles - e.g. a NewsAPI outage shouldn't take down the
+    others' articles - e.g. an Exa outage shouldn't take down the
     yfinance-backed company news alongside it.
     """
 

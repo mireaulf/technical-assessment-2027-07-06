@@ -39,7 +39,7 @@ Defined in [docker-compose.yml](docker-compose.yml). Three services:
   - `DATABASE_URL` overridden the same way as `api`; `INGESTION_INTERVAL_SECONDS` (default `21600` = 6h, from `.env`) controls how often it refreshes tracked tickers
   - `restart: unless-stopped` — the loop itself already catches per-ticker exceptions (see `app/ingestion.py`), so a container restart would only matter if the process crashed outright
 
-Both `api` and `ingestion` read `env_file: .env`, so **`.env` must exist before `docker compose up`** (Compose fails fast otherwise) — it's checked into the repo, so this is normally already satisfied. `.env` holds 1Password references (`op://...`), not literal secrets: the four secret vars (`ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `NEWSAPI_API_KEY`, `GNEWS_API_KEY`) are also set explicitly under each service's `environment:` block as `${VAR}`, which takes precedence over `env_file` for those keys and is resolved from the shell — `scripts/infra.sh` runs `docker compose up` wrapped in `op run --env-file .env --`, which signs into 1Password (if needed) and injects the real values into that shell before Compose reads them.
+Both `api` and `ingestion` read `env_file: .env`, so **`.env` must exist before `docker compose up`** (Compose fails fast otherwise) — it's checked into the repo, so this is normally already satisfied. `.env` holds 1Password references (`op://...`), not literal secrets: the four secret vars (`ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `EXA_API_KEY`, `GNEWS_API_KEY`) are also set explicitly under **both** services' `environment:` blocks as `${VAR}`, which takes precedence over `env_file` for those keys and is resolved from the shell — `scripts/infra.sh` runs `docker compose up` wrapped in `op run --env-file .env --`, which signs into 1Password (if needed) and injects the real values into that shell before Compose reads them. (Both services need all four: `POST /api/ingest/{ticker}` in the `api` container and the scheduler loop in `ingestion` both run the same classification/news-provider code path in `app/ingestion.py`. Relying on just `env_file` for either would silently hand that container the *unresolved* `op://...` string instead of the real key or an empty value.)
 
 Start/stop via [scripts/infra.sh](scripts/infra.sh) (preferred over installing/running Postgres directly on the host, or starting Uvicorn by hand):
 
@@ -130,8 +130,9 @@ All runtime config is environment variables, loaded via `app/config.py` (`pydant
 
 - `DATABASE_URL` — the value in `.env` (`localhost:5432`) is for anything running on the host, i.e. only `pytest`/`psql` today. Both the `api` and `ingestion` Compose services override this to the in-network hostname `db` instead — see `docker-compose.yml`.
 - `INGESTION_INTERVAL_SECONDS` — only read by `app/scheduler.py`; irrelevant to the API process.
-- `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` — required for `POST /api/chat`, and read by the `ingestion` container too (explanation generation at ingest time skips gracefully, logging and returning no explanations, if this isn't set - it doesn't fail the ingestion run).
-- `NEWSAPI_API_KEY` / `GNEWS_API_KEY` — unused today (no provider reads them yet); reserved for a future `NewsProvider` implementation.
+- `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` — required for `POST /api/chat`, and read by the `ingestion` container too (explanation generation and industry/competitor classification at ingest time both skip gracefully, logging and doing nothing, if this isn't set - neither fails the ingestion run).
+- `EXA_API_KEY` — optional; activates industry moves (industry/competitor news via `ExaProvider`, see `app/news/exa_provider.py`) on top of the always-on yfinance company news. Unset, behavior is unchanged.
+- `GNEWS_API_KEY` — unused today (no provider reads it); reserved for a possible second broad-news provider.
 
 ## Operating notes / known gaps
 

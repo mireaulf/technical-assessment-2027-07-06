@@ -11,7 +11,7 @@ from app.models import Article
 from app.news.base import NewsProvider
 from app.news.classifier import classify_ticker
 from app.news.composite_provider import CompositeNewsProvider
-from app.news.newsapi_provider import NewsAPIProvider
+from app.news.exa_provider import ExaProvider
 from app.news.yfinance_provider import YFinanceNewsProvider
 from app.repository import (
     extend_coverage,
@@ -48,15 +48,15 @@ PCT_CHANGE_BUFFER_DAYS = 7
 EXPLANATION_MIN_MOVE_PCT = 2.0
 EXPLANATION_NEWS_WINDOW_DAYS = 2
 
-# Industry moves (industry/competitor news) only activates once a NewsAPI key
+# Industry moves (industry/competitor news) only activates once an Exa key
 # is configured - without one, behavior is unchanged from the Easy tier.
-_NEWSAPI_CONFIGURED = bool(settings.newsapi_api_key)
+_EXA_CONFIGURED = bool(settings.exa_api_key)
 
 
 def _build_news_provider() -> NewsProvider:
-    if not _NEWSAPI_CONFIGURED:
+    if not _EXA_CONFIGURED:
         return YFinanceNewsProvider()
-    return CompositeNewsProvider([YFinanceNewsProvider(), NewsAPIProvider(settings.newsapi_api_key)])
+    return CompositeNewsProvider([YFinanceNewsProvider(), ExaProvider(settings.exa_api_key)])
 
 
 _news_provider: NewsProvider = _build_news_provider()
@@ -121,7 +121,7 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
         articles = []
         try:
             industry, competitors = (None, [])
-            if _NEWSAPI_CONFIGURED:
+            if _EXA_CONFIGURED:
                 industry, competitors = _get_or_classify(session, ticker)
             articles = _news_provider.get_news(ticker, industry=industry, competitors=competitors)
             upsert_articles(session, ticker, articles)
