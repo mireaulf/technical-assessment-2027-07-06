@@ -148,7 +148,8 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
+# .env is intentionally NOT ignored: it holds 1Password references
+# (op://...), not literal secrets - see .env.
 .envrc
 .venv
 env/
