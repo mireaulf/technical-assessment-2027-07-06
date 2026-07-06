@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.db import ArticleRow, PriceRow, TickerPriceCoverage
+from app.db import ArticleRow, MovementExplanationRow, PriceRow, TickerPriceCoverage
 from app.models import Article, PricePoint
 
 
@@ -118,3 +118,29 @@ def get_articles(session: Session, ticker: str, start: date, end: date) -> list[
         .order_by(ArticleRow.published_at)
     )
     return list(session.scalars(stmt))
+
+
+def get_explanations(session: Session, ticker: str, dates: list[date]) -> dict[date, str]:
+    if not dates:
+        return {}
+    stmt = select(MovementExplanationRow).where(
+        MovementExplanationRow.ticker == ticker, MovementExplanationRow.date.in_(dates)
+    )
+    return {row.date: row.explanation for row in session.scalars(stmt)}
+
+
+def upsert_explanations(session: Session, ticker: str, explanations: dict[date, str], model: str) -> None:
+    if not explanations:
+        return
+    now = datetime.now(timezone.utc)
+    rows = [
+        {"ticker": ticker, "date": d, "explanation": text, "model": model, "generated_at": now}
+        for d, text in explanations.items()
+    ]
+    stmt = pg_insert(MovementExplanationRow).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["ticker", "date"],
+        set_={"explanation": stmt.excluded.explanation, "model": stmt.excluded.model, "generated_at": stmt.excluded.generated_at},
+    )
+    session.execute(stmt)
+    session.commit()

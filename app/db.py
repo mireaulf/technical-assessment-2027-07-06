@@ -59,5 +59,22 @@ class ArticleRow(Base):
     fetched_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class MovementExplanationRow(Base):
+    """A pre-generated, cached explanation for one ticker's movement on one day.
+
+    Generated at ingestion time (see app/explain.py), not on read, so the API
+    never has to call Claude to answer "why did this move" and stays up even
+    if Claude is down.
+    """
+
+    __tablename__ = "movement_explanations"
+
+    ticker = Column(String, primary_key=True)
+    date = Column(Date, primary_key=True)
+    explanation = Column(String, nullable=False)
+    model = Column(String, nullable=False)
+    generated_at = Column(DateTime(timezone=True), nullable=False)
+
+
 def init_db():
     Base.metadata.create_all(engine)

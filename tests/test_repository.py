@@ -9,9 +9,11 @@ from app.repository import (
     extend_coverage,
     get_articles,
     get_coverage,
+    get_explanations,
     get_prices,
     list_tracked_tickers,
     upsert_articles,
+    upsert_explanations,
     upsert_prices,
 )
 
@@ -30,7 +32,7 @@ def session():
     with SessionLocal() as s:
         yield s
         # Clean up rows created by this ticker so re-runs stay idempotent.
-        for table in ("articles", "prices", "ticker_price_coverage"):
+        for table in ("articles", "prices", "ticker_price_coverage", "movement_explanations"):
             s.execute(text(f"DELETE FROM {table} WHERE ticker = :t"), {"t": TEST_TICKER})
         s.commit()
 
@@ -103,3 +105,28 @@ def test_get_articles_filters_by_published_date(session):
 
     rows = get_articles(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
     assert [r.title for r in rows] == ["In range"]
+
+
+def test_upsert_and_get_explanations_roundtrip(session):
+    upsert_explanations(
+        session,
+        TEST_TICKER,
+        {date(2026, 1, 2): "Moved on earnings.", date(2026, 1, 3): "Moved on a lawsuit."},
+        model="claude-test-model",
+    )
+
+    result = get_explanations(session, TEST_TICKER, [date(2026, 1, 2), date(2026, 1, 3), date(2026, 1, 4)])
+
+    assert result == {
+        date(2026, 1, 2): "Moved on earnings.",
+        date(2026, 1, 3): "Moved on a lawsuit.",
+    }
+
+
+def test_upsert_explanations_overwrites_on_conflict(session):
+    upsert_explanations(session, TEST_TICKER, {date(2026, 1, 2): "First draft."}, model="claude-test-model")
+    upsert_explanations(session, TEST_TICKER, {date(2026, 1, 2): "Revised."}, model="claude-test-model-2")
+
+    result = get_explanations(session, TEST_TICKER, [date(2026, 1, 2)])
+
+    assert result == {date(2026, 1, 2): "Revised."}

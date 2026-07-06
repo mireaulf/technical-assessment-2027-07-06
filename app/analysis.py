@@ -3,7 +3,7 @@ from typing import Optional
 
 from app.db import SessionLocal
 from app.models import Article, PricePoint, TickerAnalysis, TrackedTicker
-from app.repository import get_articles, get_coverage, get_prices, list_coverage
+from app.repository import get_articles, get_coverage, get_explanations, get_prices, list_coverage
 from app.stock_service import TickerNotIngestedError, attach_news_to_movements, detect_movements
 
 DEFAULT_LOOKBACK_DAYS = 180
@@ -66,6 +66,10 @@ def get_ticker_analysis(
         article_rows = get_articles(session, ticker, start_date - buffer, end_date + buffer)
         articles = [_row_to_article(r) for r in article_rows]
         attach_news_to_movements(movements, articles, window_days=NEWS_WINDOW_DAYS)
+
+        explanations = get_explanations(session, ticker, [m.date for m in movements])
+        for m in movements:
+            m.explanation = explanations.get(m.date)
 
         return TickerAnalysis(
             ticker=ticker,
