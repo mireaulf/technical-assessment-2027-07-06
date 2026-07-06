@@ -29,6 +29,7 @@ def _row_to_article(row) -> Article:
         source=row.source,
         published_at=row.published_at,
         summary=row.summary,
+        category=row.category,
     )
 
 

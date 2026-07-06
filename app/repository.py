@@ -5,7 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.db import ArticleRow, MovementExplanationRow, PriceRow, TickerPriceCoverage
+from app.db import (
+    ArticleRow,
+    MovementExplanationRow,
+    PriceRow,
+    TickerClassificationRow,
+    TickerPriceCoverage,
+)
 from app.models import Article, PricePoint
 
 
@@ -94,6 +100,7 @@ def upsert_articles(session: Session, ticker: str, articles: list[Article]) -> N
             "source": a.source,
             "published_at": a.published_at,
             "summary": a.summary,
+            "category": a.category,
             "fetched_at": now,
         }
         for a in articles
@@ -102,7 +109,17 @@ def upsert_articles(session: Session, ticker: str, articles: list[Article]) -> N
     if not rows:
         return
     stmt = pg_insert(ArticleRow).values(rows)
-    stmt = stmt.on_conflict_do_nothing(index_elements=["ticker", "url"])
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["ticker", "url"],
+        set_={
+            "title": stmt.excluded.title,
+            "source": stmt.excluded.source,
+            "published_at": stmt.excluded.published_at,
+            "summary": stmt.excluded.summary,
+            "category": stmt.excluded.category,
+            "fetched_at": stmt.excluded.fetched_at,
+        },
+    )
     session.execute(stmt)
     session.commit()
 
@@ -143,4 +160,22 @@ def upsert_explanations(session: Session, ticker: str, explanations: dict[date, 
         set_={"explanation": stmt.excluded.explanation, "model": stmt.excluded.model, "generated_at": stmt.excluded.generated_at},
     )
     session.execute(stmt)
+    session.commit()
+
+
+def get_classification(session: Session, ticker: str) -> Optional[TickerClassificationRow]:
+    return session.get(TickerClassificationRow, ticker)
+
+
+def upsert_classification(session: Session, ticker: str, industry: str, competitors: list[str]) -> None:
+    now = datetime.now(timezone.utc)
+    row = session.get(TickerClassificationRow, ticker)
+    if row:
+        row.industry = industry
+        row.competitors = competitors
+        row.classified_at = now
+    else:
+        session.add(
+            TickerClassificationRow(ticker=ticker, industry=industry, competitors=competitors, classified_at=now)
+        )
     session.commit()

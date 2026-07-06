@@ -18,7 +18,13 @@ class YFinanceNewsProvider(NewsProvider):
     remove that limitation.
     """
 
-    def get_news(self, ticker: str, company_name: Optional[str] = None) -> list[Article]:
+    def get_news(
+        self,
+        ticker: str,
+        company_name: Optional[str] = None,
+        industry: Optional[str] = None,
+        competitors: Optional[list[str]] = None,
+    ) -> list[Article]:
         raw = yf.Ticker(ticker).news or []
         articles = []
         for item in raw:

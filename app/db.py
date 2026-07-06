@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    JSON,
     Column,
     Date,
     DateTime,
@@ -56,6 +57,7 @@ class ArticleRow(Base):
     source = Column(String, nullable=True)
     published_at = Column(DateTime(timezone=True), nullable=True)
     summary = Column(String, nullable=True)
+    category = Column(String, nullable=False, server_default="company")
     fetched_at = Column(DateTime(timezone=True), nullable=False)
 
 
@@ -74,6 +76,20 @@ class MovementExplanationRow(Base):
     explanation = Column(String, nullable=False)
     model = Column(String, nullable=False)
     generated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class TickerClassificationRow(Base):
+    """Cached LLM classification of a ticker's industry + top competitors,
+    used to drive Medium-tier news queries (see app/news/classifier.py).
+    Classified once per ticker, not re-derived on every ingestion cycle.
+    """
+
+    __tablename__ = "ticker_classifications"
+
+    ticker = Column(String, primary_key=True)
+    industry = Column(String, nullable=True)
+    competitors = Column(JSON, nullable=False, default=list)
+    classified_at = Column(DateTime(timezone=True), nullable=False)
 
 
 def init_db():

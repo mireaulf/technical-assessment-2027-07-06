@@ -2,19 +2,26 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
 from app.config import settings
 from app.db import SessionLocal
 from app.explain import generate_explanations
 from app.models import Article
 from app.news.base import NewsProvider
+from app.news.classifier import classify_ticker
+from app.news.composite_provider import CompositeNewsProvider
+from app.news.newsapi_provider import NewsAPIProvider
 from app.news.yfinance_provider import YFinanceNewsProvider
 from app.repository import (
     extend_coverage,
     get_articles,
+    get_classification,
     get_coverage,
     get_explanations,
     list_tracked_tickers,
     upsert_articles,
+    upsert_classification,
     upsert_explanations,
     upsert_prices,
 )
@@ -40,7 +47,39 @@ PCT_CHANGE_BUFFER_DAYS = 7
 EXPLANATION_MIN_MOVE_PCT = 2.0
 EXPLANATION_NEWS_WINDOW_DAYS = 2
 
-_news_provider: NewsProvider = YFinanceNewsProvider()
+# Medium tier (industry/competitor news) only activates once a NewsAPI key
+# is configured - without one, behavior is unchanged from the Easy tier.
+MEDIUM_TIER_ENABLED = bool(settings.newsapi_api_key)
+
+
+def _build_news_provider() -> NewsProvider:
+    if not MEDIUM_TIER_ENABLED:
+        return YFinanceNewsProvider()
+    return CompositeNewsProvider([YFinanceNewsProvider(), NewsAPIProvider(settings.newsapi_api_key)])
+
+
+_news_provider: NewsProvider = _build_news_provider()
+
+
+def _get_or_classify(session: Session, ticker: str) -> tuple[Optional[str], list[str]]:
+    """Industry + competitors for a ticker, classifying (and caching) via
+    Claude on first use. Returns (None, []) if classification isn't
+    available or fails - callers should treat that as "no Medium-tier
+    context for this ticker" rather than an error.
+    """
+    row = get_classification(session, ticker)
+    if row is not None:
+        return row.industry, row.competitors
+
+    if not settings.anthropic_api_key:
+        return None, []
+
+    classification = classify_ticker(ticker, settings.anthropic_api_key, settings.anthropic_model)
+    if classification is None:
+        return None, []
+
+    upsert_classification(session, ticker, classification.industry, classification.competitors)
+    return classification.industry, classification.competitors
 
 
 def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> dict:
@@ -77,7 +116,10 @@ def ingest_ticker(ticker: str, start_date: Optional[date] = None, end_date: Opti
 
         articles = []
         try:
-            articles = _news_provider.get_news(ticker)
+            industry, competitors = (None, [])
+            if MEDIUM_TIER_ENABLED:
+                industry, competitors = _get_or_classify(session, ticker)
+            articles = _news_provider.get_news(ticker, industry=industry, competitors=competitors)
             upsert_articles(session, ticker, articles)
         except Exception:
             logger.exception("News fetch failed for %s (prices were still ingested)", ticker)
@@ -125,6 +167,7 @@ def _generate_missing_explanations(session, ticker: str, points: list) -> int:
             source=r.source,
             published_at=r.published_at,
             summary=r.summary,
+            category=r.category,
         )
         for r in get_articles(session, ticker, window_start, window_end)
     ]

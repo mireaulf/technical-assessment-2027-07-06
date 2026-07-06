@@ -13,6 +13,18 @@ class NewsProvider(ABC):
     """
 
     @abstractmethod
-    def get_news(self, ticker: str, company_name: Optional[str] = None) -> list[Article]:
-        """Return recent news articles relevant to the given ticker."""
+    def get_news(
+        self,
+        ticker: str,
+        company_name: Optional[str] = None,
+        industry: Optional[str] = None,
+        competitors: Optional[list[str]] = None,
+    ) -> list[Article]:
+        """Return recent news articles relevant to the given ticker.
+
+        `industry`/`competitors` are optional hints (see
+        app/news/classifier.py) for providers that support broader
+        (Medium-tier) queries - providers that only do company-specific
+        lookups are free to ignore them.
+        """
         raise NotImplementedError

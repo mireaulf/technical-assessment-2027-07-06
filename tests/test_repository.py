@@ -90,6 +90,32 @@ def test_upsert_articles_dedupes_by_url(session):
     assert len(rows) == 1
 
 
+def test_upsert_articles_overwrites_on_conflict(session):
+    original = Article(
+        title="Original headline",
+        url="http://example.com/story-2",
+        published_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        summary="Old summary",
+        category="company",
+    )
+    upsert_articles(session, TEST_TICKER, [original])
+
+    updated = Article(
+        title="Updated headline",
+        url="http://example.com/story-2",
+        published_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        summary="New summary",
+        category="industry",
+    )
+    upsert_articles(session, TEST_TICKER, [updated])
+
+    rows = get_articles(session, TEST_TICKER, date(2026, 1, 1), date(2026, 1, 31))
+    assert len(rows) == 1
+    assert rows[0].title == "Updated headline"
+    assert rows[0].summary == "New summary"
+    assert rows[0].category == "industry"
+
+
 def test_get_articles_filters_by_published_date(session):
     in_range = Article(
         title="In range",
