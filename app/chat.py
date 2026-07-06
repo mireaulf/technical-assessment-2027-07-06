@@ -31,14 +31,14 @@ def _format_context(analysis: TickerAnalysis) -> str:
             f"- {m.date}: {m.direction.upper()} {m.pct_change:+.2f}% "
             f"(close {m.prev_close} -> {m.close})"
         )
-        if m.explanation:
-            lines.append(f"    Pre-generated explanation: {m.explanation}")
         if m.articles:
+            if m.explanation:
+                lines.append(f"    Pre-generated explanation: {m.explanation}")
             for a in m.articles:
                 published = a.published_at.date() if a.published_at else "unknown date"
                 lines.append(f"    * [{published}] {a.title} ({a.source or 'unknown source'})")
         else:
-            lines.append("    * No related news articles found for this date.")
+            lines.append(f"    * {m.explanation or 'No related news articles found for this date.'}")
     return "\n".join(lines)
 
 
