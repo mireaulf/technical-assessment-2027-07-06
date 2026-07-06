@@ -19,6 +19,7 @@ from app.repository import (
     get_classification,
     get_coverage,
     get_explanations,
+    list_classified_industries,
     list_tracked_tickers,
     upsert_articles,
     upsert_classification,
@@ -74,7 +75,10 @@ def _get_or_classify(session: Session, ticker: str) -> tuple[Optional[str], list
     if not settings.anthropic_api_key:
         return None, []
 
-    classification = classify_ticker(ticker, settings.anthropic_api_key, settings.anthropic_model)
+    existing_industries = list_classified_industries(session)
+    classification = classify_ticker(
+        ticker, settings.anthropic_api_key, settings.anthropic_model, existing_industries
+    )
     if classification is None:
         return None, []
 

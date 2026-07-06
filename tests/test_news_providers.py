@@ -23,8 +23,10 @@ class _FakeAnthropicResponse:
 class _FakeAnthropicMessages:
     def __init__(self, text):
         self._text = text
+        self.last_kwargs = None
 
     def create(self, **kwargs):
+        self.last_kwargs = kwargs
         return _FakeAnthropicResponse(self._text)
 
 
@@ -58,6 +60,32 @@ def test_classify_ticker_returns_none_on_malformed_json(monkeypatch):
 
 def test_classify_ticker_returns_none_without_api_key():
     assert classify_ticker("NVDA", api_key="", model="fake-model") is None
+
+
+def test_classify_ticker_prompts_reuse_of_existing_industries(monkeypatch):
+    payload = json.dumps({"industry": "Semiconductors", "competitors": []})
+    client = _FakeAnthropicClient(payload)
+    monkeypatch.setattr("app.news.classifier.anthropic.Anthropic", lambda api_key: client)
+    monkeypatch.setattr("app.news.classifier.yf.Ticker", lambda ticker: type("T", (), {"info": {}})())
+
+    classify_ticker("NVDA", api_key="fake-key", model="fake-model", existing_industries=["Semiconductors", "Retail"])
+
+    prompt = client.messages.last_kwargs["messages"][0]["content"]
+    assert "Semiconductors" in prompt
+    assert "Retail" in prompt
+    assert "already in use" in prompt
+
+
+def test_classify_ticker_omits_reuse_hint_without_existing_industries(monkeypatch):
+    payload = json.dumps({"industry": "Semiconductors", "competitors": []})
+    client = _FakeAnthropicClient(payload)
+    monkeypatch.setattr("app.news.classifier.anthropic.Anthropic", lambda api_key: client)
+    monkeypatch.setattr("app.news.classifier.yf.Ticker", lambda ticker: type("T", (), {"info": {}})())
+
+    classify_ticker("NVDA", api_key="fake-key", model="fake-model")
+
+    prompt = client.messages.last_kwargs["messages"][0]["content"]
+    assert "already in use" not in prompt
 
 
 class _FakeHTTPResponse:
